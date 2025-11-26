@@ -11,7 +11,7 @@ import * as z from "zod";
 import { useWebSocket } from "@/store/useWebSocket"
 
 interface LandingPageProps {
-  onJoinRoom: (roomId: string) => void
+  onJoinRoom: (roomId: string, username: string) => void;
 }
 
 export function LandingPage({ onJoinRoom }: LandingPageProps) {
@@ -33,7 +33,7 @@ export function LandingPage({ onJoinRoom }: LandingPageProps) {
     if (!lastEvent) return;
 
     if (lastEvent.type === "join_success") {
-      onJoinRoom(lastEvent.payload.roomId);
+      onJoinRoom(lastEvent.payload.roomId, userName);
     }
 
     if (lastEvent.type === "join_error") {

@@ -1,31 +1,48 @@
 import { WebSocketServer, WebSocket } from "ws";
 const wss = new WebSocketServer({ port: 8080 });
 let allSockets = [];
-function getActiveUsers(roomId) {
+/* --------------------- Helpers --------------------- */
+function getUsersInRoom(roomId) {
     return allSockets
         .filter((u) => u.room === roomId)
         .map((u) => u.username);
 }
 function broadcastRoomUsers(roomId) {
-    const users = getActiveUsers(roomId);
-    console.log(`Broadcasting users for room ${roomId}:`, users);
+    const users = getUsersInRoom(roomId);
     allSockets.forEach((u) => {
         if (u.room === roomId) {
             u.socket.send(JSON.stringify({
                 type: "room_users",
-                payload: {
-                    roomId,
-                    users
-                }
+                payload: { roomId, users }
             }));
         }
     });
 }
+/* --------------------- WebSocket Logic --------------------- */
 wss.on("connection", (socket) => {
-    socket.on("message", (message) => {
-        const parsedMessage = JSON.parse(message);
-        if (parsedMessage.type === "join") {
-            const { roomId, username } = parsedMessage.payload;
+    console.log("New connection");
+    socket.on("message", (raw) => {
+        let data;
+        try {
+            data = JSON.parse(raw.toString());
+        }
+        catch (e) {
+            socket.send(JSON.stringify({ type: "error", payload: { message: "Invalid JSON" } }));
+            return;
+        }
+        /* --------------------- JOIN ROOM --------------------- */
+        if (data.type === "join") {
+            const { roomId, username } = data.payload;
+            if (!roomId || !username) {
+                socket.send(JSON.stringify({
+                    type: "join_error",
+                    payload: { message: "roomId & username required" }
+                }));
+                return;
+            }
+            // Remove old duplicate socket entries
+            allSockets = allSockets.filter((u) => u.socket !== socket);
+            // Prevent username conflict
             const exists = allSockets.some((u) => u.room === roomId && u.username === username);
             if (exists) {
                 socket.send(JSON.stringify({
@@ -35,42 +52,57 @@ wss.on("connection", (socket) => {
                 return;
             }
             allSockets.push({ socket, room: roomId, username });
-            broadcastRoomUsers(roomId);
             socket.send(JSON.stringify({
                 type: "join_success",
                 payload: { roomId, username }
             }));
-            console.log("all sockets:", allSockets);
+            broadcastRoomUsers(roomId);
+            return;
         }
-        if (parsedMessage.type === "chat") {
-            const sender = allSockets.find((s) => s.socket === socket);
-            if (sender) {
-                const { room, username } = sender;
-                allSockets.forEach((s) => {
-                    if (s.room === room) {
-                        s.socket.send(JSON.stringify({
-                            type: "message",
-                            payload: {
-                                username,
-                                message: parsedMessage.payload.message
-                            }
-                        }));
-                    }
-                });
+        /* --------------------- CHAT MESSAGE --------------------- */
+        if (data.type === "chat") {
+            const sender = allSockets.find((u) => u.socket === socket);
+            // Not joined → reject
+            if (!sender) {
+                socket.send(JSON.stringify({
+                    type: "chat_error",
+                    payload: { message: "You must join a room before sending messages." }
+                }));
+                return;
             }
+            const { room, username } = sender;
+            // Validate payload
+            if (!data.payload?.message) {
+                socket.send(JSON.stringify({
+                    type: "chat_error",
+                    payload: { message: "Message cannot be empty." }
+                }));
+                return;
+            }
+            // Prevent room spoofing (payload roomId ignored)
+            // Prevent username spoofing (payload username ignored)
+            // Broadcast chat message
+            allSockets.forEach((u) => {
+                if (u.room === room) {
+                    u.socket.send(JSON.stringify({
+                        type: "message",
+                        payload: {
+                            username,
+                            message: data.payload.message
+                        }
+                    }));
+                }
+            });
+            return;
         }
     });
+    /* --------------------- DISCONNECT --------------------- */
     socket.on("close", () => {
-        console.log("User disconnected 🚪");
         const user = allSockets.find((u) => u.socket === socket);
         if (!user)
             return;
         const { room } = user;
         allSockets = allSockets.filter((u) => u.socket !== socket);
-        const isRoomEmpty = !allSockets.some((u) => u.room === room);
-        if (isRoomEmpty) {
-            console.log(`🗑️ Room "${room}" is now empty. Deleting room.`);
-        }
         broadcastRoomUsers(room);
     });
 });

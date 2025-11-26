@@ -16,7 +16,7 @@ interface WSState {
   disconnect: () => void;
 
   joinRoom: (roomId: string, username: string) => void;
-  sendMessage: (message: string) => void;
+  sendMessage: (roomId: string, username: string, message: string) => void;
 }
 
 export const useWebSocket = create<WSState>((set, get) => ({
@@ -88,15 +88,15 @@ export const useWebSocket = create<WSState>((set, get) => ({
     );
   },
 
-  sendMessage: (message) => {
+  sendMessage: (roomId, username, message) => {
     const ws = get().socket;
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
     ws.send(
       JSON.stringify({
         type: "chat",
-        payload: { message }
+        payload: { roomId, username, message },
       })
     );
-  }
+  },
 }));

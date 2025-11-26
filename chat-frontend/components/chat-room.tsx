@@ -12,7 +12,8 @@ import { cn } from "@/lib/utils"
 import { useWebSocket } from "@/store/useWebSocket"
 
 interface ChatRoomProps {
-  roomId: string
+  roomId: string;
+  username: string;
 }
 
 interface Message {
@@ -23,14 +24,13 @@ interface Message {
   isOwn: boolean
 }
 
-export function ChatRoom({ roomId }: ChatRoomProps) {
+export function ChatRoom({ roomId, username }: ChatRoomProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [inputMessage, setInputMessage] = useState("")
-  const [username] = useState(() => `User${Math.floor(Math.random() * 1000)}`)
   const [activeUsers, setActiveUsers] = useState(Math.floor(Math.random() * 5) + 2)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const [mounted, setMounted] = useState(false)
-  const { roomUsers, disconnect } = useWebSocket();
+  const { roomUsers, disconnect, sendMessage, lastEvent } = useWebSocket();
   useEffect(() => {
     setMounted(true)
   }, [])
@@ -38,6 +38,25 @@ export function ChatRoom({ roomId }: ChatRoomProps) {
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }
+
+  useEffect(() => {
+    if (!lastEvent) return;
+
+    if (lastEvent.type === "message") {
+      const { username: senderName, message } = lastEvent.payload;
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now().toString(),
+          text: message,
+          sender: senderName,
+          timestamp: new Date(),
+          isOwn: senderName === username,
+        },
+      ]);
+    }
+}, [lastEvent]);
 
   useEffect(() => {
     scrollToBottom()
@@ -54,36 +73,13 @@ export function ChatRoom({ roomId }: ChatRoomProps) {
   };
 
   const handleSendMessage = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!inputMessage.trim()) return
+    e.preventDefault();
+    if (!inputMessage.trim()) return;
 
-    const newMessage: Message = {
-      id: Date.now().toString(),
-      text: inputMessage,
-      sender: username,
-      timestamp: new Date(),
-      isOwn: true,
-    }
+    sendMessage(roomId, username, inputMessage);
+    setInputMessage("");
+  };
 
-    setMessages([...messages, newMessage])
-    setInputMessage("")
-
-    // Simulate receiving a response
-    setTimeout(
-      () => {
-        const responses = ["That's interesting!", "I agree with that", "Tell me more", "Makes sense", "Cool!"]
-        const responseMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          text: responses[Math.floor(Math.random() * responses.length)],
-          sender: `User${Math.floor(Math.random() * 1000)}`,
-          timestamp: new Date(),
-          isOwn: false,
-        }
-        setMessages((prev) => [...prev, responseMessage])
-      },
-      1000 + Math.random() * 2000,
-    )
-  }
 
   return (
     <div className={cn("min-h-screen flex flex-col relative", mounted && "animate-scale-in")}>
